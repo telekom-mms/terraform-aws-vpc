@@ -149,7 +149,7 @@ resource "aws_route_table_association" "public" {
 resource "aws_route_table_association" "private" {
   count          = length(var.private_subnets)
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private[var.single_nat_gateway ? 0 : count.index].id
+  route_table_id = aws_route_table.private[var.single_nat_gateway || !var.enable_nat_gateway ? 0 : count.index].id
 }
 
 resource "aws_route_table_association" "database" {
@@ -219,12 +219,22 @@ resource "aws_iam_role_policy" "flow_logs" {
 }
 
 resource "aws_flow_log" "this" {
-  count                = var.enable_flow_logs ? 1 : 0
-  log_destination      = var.flow_log_destination_arn != "" ? var.flow_log_destination_arn : aws_cloudwatch_log_group.flow_logs[0].arn
+  count = var.enable_flow_logs ? 1 : 0
+
   log_destination_type = var.flow_log_destination_type
-  traffic_type         = "ALL"
-  vpc_id               = aws_vpc.this.id
-  iam_role_arn         = var.flow_log_destination_type == "cloud-watch-logs" ? aws_iam_role.flow_logs[0].arn : null
+  log_destination = var.flow_log_destination_type == "s3" ? var.flow_log_s3_bucket_arn : (
+    var.flow_log_destination_arn != "" ? var.flow_log_destination_arn : aws_cloudwatch_log_group.flow_logs[0].arn
+  )
+  traffic_type = "ALL"
+  vpc_id       = aws_vpc.this.id
+  iam_role_arn = var.flow_log_destination_type == "cloud-watch-logs" ? aws_iam_role.flow_logs[0].arn : null
+
+  lifecycle {
+    precondition {
+      condition     = var.flow_log_destination_type != "s3" || var.flow_log_s3_bucket_arn != ""
+      error_message = "flow_log_s3_bucket_arn must be provided when flow_log_destination_type is s3."
+    }
+  }
 
   tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-flow-logs"

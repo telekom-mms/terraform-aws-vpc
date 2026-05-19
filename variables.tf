@@ -81,10 +81,21 @@ variable "flow_log_destination_type" {
   description = "Type of destination for flow logs (cloud-watch-logs or s3)"
   type        = string
   default     = "cloud-watch-logs"
+
+  validation {
+    condition     = contains(["cloud-watch-logs", "s3"], var.flow_log_destination_type)
+    error_message = "flow_log_destination_type must be either cloud-watch-logs or s3."
+  }
 }
 
 variable "flow_log_destination_arn" {
-  description = "ARN of the destination for flow logs (if empty, a CloudWatch Log Group will be created)"
+  description = "ARN of the CloudWatch Logs destination for flow logs (if empty, a CloudWatch Log Group will be created)"
+  type        = string
+  default     = ""
+}
+
+variable "flow_log_s3_bucket_arn" {
+  description = "ARN of the S3 bucket for VPC Flow Logs when flow_log_destination_type is s3"
   type        = string
   default     = ""
 }
