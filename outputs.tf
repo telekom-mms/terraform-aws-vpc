@@ -50,6 +50,24 @@ output "database_subnet_group_id" {
   value       = try(aws_db_subnet_group.database[0].id, null)
 }
 
+output "route_table_ids" {
+  description = "Route table IDs for public and private subnets"
+  value = {
+    public  = aws_route_table.public.id
+    private = aws_route_table.private[*].id
+  }
+}
+
+output "nat_gateway_ids" {
+  description = "List of NAT gateway IDs"
+  value       = aws_nat_gateway.this[*].id
+}
+
+output "nat_eip_ids" {
+  description = "List of NAT Elastic IP allocation IDs"
+  value       = aws_eip.nat[*].id
+}
+
 output "nat_public_ips" {
   description = "List of public Elastic IPs created for HTTP NAT Gateway"
   value       = aws_eip.nat[*].public_ip

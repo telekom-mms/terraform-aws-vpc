@@ -7,13 +7,14 @@ resource "aws_vpc" "this" {
   enable_dns_support   = var.enable_dns_support
   enable_dns_hostnames = var.enable_dns_hostnames
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-vpc"
     "PSA-Compliant" = "true"
   })
 }
 
 # Public Subnets
+# PSA Compliance: Req 10 (network segmentation)
 resource "aws_subnet" "public" {
   count                   = length(var.public_subnets)
   vpc_id                  = aws_vpc.this.id
@@ -21,7 +22,7 @@ resource "aws_subnet" "public" {
   availability_zone       = var.availability_zones[count.index % length(var.availability_zones)]
   map_public_ip_on_launch = false # Security first: don't auto-assign public IPs
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-subnet-public-${count.index + 1}"
     "Type"          = "Public"
     "PSA-Compliant" = "true"
@@ -29,13 +30,14 @@ resource "aws_subnet" "public" {
 }
 
 # Private Subnets
+# PSA Compliance: Req 10 (network segmentation)
 resource "aws_subnet" "private" {
   count             = length(var.private_subnets)
   vpc_id            = aws_vpc.this.id
   cidr_block        = var.private_subnets[count.index]
   availability_zone = var.availability_zones[count.index % length(var.availability_zones)]
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-subnet-private-${count.index + 1}"
     "Type"          = "Private"
     "PSA-Compliant" = "true"
@@ -43,13 +45,14 @@ resource "aws_subnet" "private" {
 }
 
 # Database Subnets
+# PSA Compliance: Req 10 (network segmentation)
 resource "aws_subnet" "database" {
   count             = length(var.database_subnets)
   vpc_id            = aws_vpc.this.id
   cidr_block        = var.database_subnets[count.index]
   availability_zone = var.availability_zones[count.index % length(var.availability_zones)]
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-subnet-db-${count.index + 1}"
     "Type"          = "Database"
     "PSA-Compliant" = "true"
@@ -62,7 +65,7 @@ resource "aws_db_subnet_group" "database" {
   name       = "${local.name_prefix}-db-subnet-group"
   subnet_ids = aws_subnet.database[*].id
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-db-subnet-group"
     "PSA-Compliant" = "true"
   })
@@ -72,7 +75,7 @@ resource "aws_db_subnet_group" "database" {
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-igw"
     "PSA-Compliant" = "true"
   })
@@ -83,18 +86,19 @@ resource "aws_eip" "nat" {
   count  = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnets)) : 0
   domain = "vpc"
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-nat-eip-${count.index + 1}"
     "PSA-Compliant" = "true"
   })
 }
 
+# PSA Compliance: Req 10 (egress control)
 resource "aws_nat_gateway" "this" {
   count         = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnets)) : 0
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-nat-gw-${count.index + 1}"
     "PSA-Compliant" = "true"
   })
@@ -111,7 +115,7 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.this.id
   }
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-rt-public"
     "PSA-Compliant" = "true"
   })
@@ -129,7 +133,7 @@ resource "aws_route_table" "private" {
     }
   }
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-rt-private-${count.index + 1}"
     "PSA-Compliant" = "true"
   })
@@ -162,7 +166,7 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
   retention_in_days = var.flow_log_retention_days
   kms_key_id        = var.kms_key_arn
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "/aws/vpc/${local.name_prefix}-flow-logs"
     "PSA-Compliant" = "true"
   })
@@ -185,7 +189,7 @@ resource "aws_iam_role" "flow_logs" {
     ]
   })
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-flow-logs-role"
     "PSA-Compliant" = "true"
   })
@@ -222,7 +226,7 @@ resource "aws_flow_log" "this" {
   vpc_id               = aws_vpc.this.id
   iam_role_arn         = var.flow_log_destination_type == "cloud-watch-logs" ? aws_iam_role.flow_logs[0].arn : null
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-flow-logs"
     "PSA-Compliant" = "true"
   })
@@ -232,10 +236,11 @@ resource "aws_flow_log" "this" {
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.this.id
 
-  # No rules defined = Deny all ingress and egress
+  # No ingress or egress rules are managed here, so Terraform reconciles the
+  # default security group to a deny-all posture.
   # PSA Compliance: Req 6 (Restrictive management access)
 
-  tags = merge(var.tags, {
+  tags = merge(local.common_tags, {
     "Name"          = "${local.name_prefix}-default-sg"
     "Description"   = "Hardened default SG (deny all)"
     "PSA-Compliant" = "true"
